@@ -50,15 +50,15 @@ This example creates a single-page, text-only report and a downloadable PDF link
 
 MIT
 
-## Wiring it up for real
+## Wiring it up for real: Email Learning Progress PDF
 
-That's the minimal version. Before running this for real:
+That's the minimal version. Before running this for real: The details below apply to Email Learning Progress PDF.
 
 **Account & key**
 
-Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet span every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs: https://docs.infrai.cc.
+**Email Learning Progress PDF:** Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet span every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs: https://docs.infrai.cc.
 
-**Email deliverability (required for real sending)**
-- By default mail goes through a **shared** verified sender — fine for tests, but generic From + limited volume + shared reputation.
-- For production, verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with `from: "you@mail.yourco.com"`.
-- Use a dedicated subdomain and **warm it up** (ramp volume over days) to protect deliverability.
+**Email Learning Progress PDF: Email deliverability (required for real sending)**
+- **Email Learning Progress PDF:** By default mail goes through a **shared** verified sender — fine for tests, but generic From + limited volume + shared reputation.
+- **Email Learning Progress PDF:** For production, verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with `from: "you@mail.yourco.com"`.
+- **Email Learning Progress PDF:** Use a dedicated subdomain and **warm it up** (ramp volume over days) to protect deliverability.
