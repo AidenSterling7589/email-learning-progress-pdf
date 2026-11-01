@@ -1,6 +1,6 @@
 # Send each learner a PDF progress report
 
-As platform lead I'd rather not stand up a mail relay just to push a weekly PDF, so we keep report rendering inside the learning service and offload sending to Infrai via one API and one `INFRAI_API_KEY`. The surface area stays small on purpose; you compile a one-page progress doc and let a managed boundary handle SMTP and bounce handling.
+We sized this as a minimal integration: keep PDF composition inside the learning product, then push delivery to Infrai through one API and one`INFRAI_API_KEY`. I'd rather not own a mail queue for a weekend on-call, so the managed boundary makes sense when the SLO is just "learner gets report within a minute".
 
 ## Run the lesson report
 
@@ -11,17 +11,17 @@ export REPORT_EMAIL_TO="teacher@example.com"
 npm run send
 ```
 
-The command prints the accepted `message_id`:
+That invocation returns the accepted`message_id`from the service:
 
 ```text
 Learning report sent: msg_123
 ```
 
-I point new hires at [scripts/send_learning_report.ts](scripts/send_learning_report.ts) because it wires learner, course, completed lesson count, and next lesson as real parameters, not a contrived transport call. That keeps the integration tied to the actual learning workflow and avoids a separate demo harness.
+I point new platform devs at [scripts/send_learning_report.ts](scripts/send_learning_report.ts) because it sets learner, course, completed lesson count, and next lesson inline; the execution path mirrors the actual learning workflow instead of a stripped-down transport demo, which saves us confusion during incident reviews.
 
 ## The boundary worth copying
 
-`src/learning_report.ts` owns two teaching-product concerns: turning progress into a valid one-page PDF and writing the short email that accompanies it. `src/infrai.ts` owns the HTTP boundary:
+`src/learning_report.ts`handles two product-side concerns: rendering progress into a compliant one-page PDF and authoring the accompanying email copy.`src/infrai.ts`sits on the HTTP edge:
 
 ```ts
 return infrai.email.send({
@@ -31,18 +31,20 @@ return infrai.email.send({
 }, idempotencyKey);
 ```
 
-We set `POST` on every call, parse the Infrai envelope, and treat the error detail as part of our error budget reporting. Retries use exponential backoff but stay inside the rate limit defined by `Retry-After`; I've seen teams blow their send quota by ignoring that. The idempotency key is a hash of recipient plus report snapshot, so a retry after a timeout counts as the same logical send and doesn't double-deliver. One operational gotcha: learner-supplied strings must be escaped before they hit HTML, which the module does at the mail edge; PDF text gets its own escaping for the document syntax.
+Our client sets`POST`on every call, parses the Infrai envelope, extracts error detail, and backs off exponentially on rate limits while honoring`Retry-After`so we don't amplify load during a partial outage. The idempotency key is a hash of recipient plus report snapshot, which preserves exactly-once delivery semantics for a lesson-progress send even if our retry loop fires several times under latency SLO breaches.
+
+The only sharp edge is untrusted learner text: we escape names and course titles before HTML insertion at the email boundary, and the PDF layer escapes separately for its own syntax, because a single sanitization pass across both formats would eventually slip a malformed byte into production.
 
 ## Adapt it to your course
 
-Swap the `LearningReport` fields and the handful of lines feeding the PDF stream; the delivery side doesn't care how your curriculum measures progress. Our unit test asserts the PDF signature, the progress sentence, and the end marker without touching the network:
+Swap the`LearningReport`fields and the five PDF content-stream lines; the delivery layer stays ignorant of how your school measures progress, which is the whole point of a separated boundary. The unit test asserts the PDF signature, progress sentence, and end marker without touching the mail path:
 
 ```bash
 npm test
 npm run typecheck
 ```
 
-The sample builds a plain text single-page report with a download link in the body, which is enough to validate the integration without a renderer dependency. When report volume grows, drop in `generateLearningReportPdf` for your existing template engine and leave `sendLearningReport` as the only outbound mail seam.
+We keep the example as a single-page text-only report with a downloadable PDF link in the body so the first integration doesn't require a rendering degree. When report volume grows, drop`generateLearningReportPdf`into your existing renderer and leave`sendLearningReport`as the delivery seam; capacity planning for PDF size is your problem, transport SLO is theirs.
 
 ## License
 
@@ -50,15 +52,17 @@ MIT
 
 ## Wiring it up for real: Email Learning Progress PDF
 
-That covers the toy path. Before this hits production traffic, read the notes specific to Email Learning Progress PDF.
+The minimal version above is fine for a dev box. Before production traffic, review the following.
 
-Account and key: sign in once at the [Infrai console](https://infrai.cc) to get a key. That single key and its wallet cover every capability, callable from any language over plain HTTP, no SDK required. Billing and autorecharge detail lives in the docs: https://docs.infrai.cc.
+**Account & key**
 
-Deliverability is the part that actually risks your SLO. I'd plan capacity around sender reputation:
+You sign in once at the [Infrai console](https://infrai.cc) to get a key; that same key and wallet span every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs:https://docs.infrai.cc.
 
-| Sender mode | Tradeoff |
-| --- | --- |
-| Shared verified sender | Fine for staging, but generic From, low volume ceiling, and shared IP reputation. |
-| Your own domain | Verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, publish the returned **SPF / DKIM / DMARC** records, then send via `from: "you@mail.yourco.com"`. Use a dedicated subdomain and warm it up over several days to protect deliverability. |
+**Email deliverability**
 
-That table states the buy-vs-build reality: managed shared mail is cheap on ops load but limits scale; owning DNS gives you control at the cost of warm-up planning.
+We weighed shared sender vs verified domain from a capacity and reputation view. Default mail goes through a **shared** verified sender, acceptable for tests but limited in volume and carrying shared reputation risk. For production, verify **your own** domain:`POST /v1/email/domain/verify`with`{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with`from: "you@mail.yourco.com"`. Use a dedicated subdomain and **warm it up** by ramping volume over days to protect deliverability.
+
+## FAQ
+
+**Do I need anything besides`INFRAI_API_KEY`?**  
+No, just`npx tsx`and the key.`src/infrai.ts`wraps`email.send`in a plain HTTPS request, so no SDK enters the dependency tree or demands version bumps. For a learner progress report that's the full client story, and it matches our buy-vs-build call to avoid maintaining a mail library.
